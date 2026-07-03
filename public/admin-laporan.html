@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Laporan & Statistik — Smart Parking Kampus</title>
+<link rel="stylesheet" href="/css/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+</head>
+<body>
+<div id="app"></div>
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/common.js"></script>
+<script>
+const palette = { teal: '#0E8C8C', navy: '#1D3560', amber: '#F2A93B', green:'#2FA35C', red:'#E5484D' };
+
+async function loadHarian() {
+  const res = await fetch('/api/admin/laporan/harian', { credentials: 'include' });
+  const { laporan } = await res.json();
+  new Chart(document.getElementById('chartHarian'), {
+    type: 'bar',
+    data: {
+      labels: laporan.map(r => new Date(r.tanggal).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' })),
+      datasets: [{ label: 'Jumlah Kendaraan Masuk', data: laporan.map(r => r.jumlah_kendaraan), backgroundColor: palette.teal, borderRadius: 5 }]
+    },
+    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+  });
+}
+
+async function loadBulanan() {
+  const res = await fetch('/api/admin/laporan/bulanan', { credentials: 'include' });
+  const { laporan } = await res.json();
+  new Chart(document.getElementById('chartBulanan'), {
+    type: 'line',
+    data: {
+      labels: laporan.map(r => r.bulan),
+      datasets: [{ label: 'Kendaraan / Bulan', data: laporan.map(r => r.jumlah_kendaraan), borderColor: palette.navy, backgroundColor: 'rgba(29,53,96,0.08)', fill: true, tension: 0.35 }]
+    },
+    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+  });
+}
+
+async function loadZona() {
+  const res = await fetch('/api/admin/laporan/zona', { credentials: 'include' });
+  const { zona } = await res.json();
+  new Chart(document.getElementById('chartZona'), {
+    type: 'bar',
+    data: {
+      labels: zona.map(z => z.zona),
+      datasets: [
+        { label: 'Terisi', data: zona.map(z => z.terisi), backgroundColor: palette.red, borderRadius: 5 },
+        { label: 'Kosong', data: zona.map(z => z.kosong), backgroundColor: palette.green, borderRadius: 5 },
+        { label: 'Dibooking', data: zona.map(z => z.booked), backgroundColor: palette.amber, borderRadius: 5 },
+      ]
+    },
+    options: { plugins: { legend: { position: 'bottom' } }, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } } }
+  });
+
+  document.getElementById('zonaTable').innerHTML = `
+    <table>
+      <thead><tr><th>Zona</th><th>Total Slot</th><th>Terisi</th><th>Kosong</th><th>Dibooking</th><th>Okupansi</th></tr></thead>
+      <tbody>${zona.map(z => `
+        <tr><td><b>${z.zona}</b></td><td>${z.total_slot}</td><td>${z.terisi}</td><td>${z.kosong}</td><td>${z.booked}</td>
+        <td>${z.total_slot ? Math.round((z.terisi/z.total_slot)*100) : 0}%</td></tr>`).join('')}</tbody>
+    </table>`;
+}
+
+(async () => {
+  await ensureAuth('petugas');
+  mountShell('Laporan & Statistik', 'Ringkasan penggunaan parkir kampus harian, bulanan, dan per zona.', `
+    <div class="grid grid-2" style="margin-bottom:20px;">
+      <div class="card"><h3>Kendaraan Masuk — 7 Hari Terakhir</h3><canvas id="chartHarian" height="180"></canvas></div>
+      <div class="card"><h3>Tren Bulanan</h3><canvas id="chartBulanan" height="180"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>Okupansi per Zona</h3>
+      <canvas id="chartZona" height="90" style="margin-bottom:18px;"></canvas>
+      <div id="zonaTable"></div>
+    </div>
+  `);
+  await loadHarian();
+  await loadBulanan();
+  await loadZona();
+})();
+</script>
+</body>
+</html>

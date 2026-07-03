@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Parking Kampus — Masuk</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="auth-wrap">
+  <div class="auth-side">
+    <div class="stripes"></div>
+    <div class="eyebrow">SISTEM PARKIR PINTAR · IoT</div>
+    <h1>Cari slot kosong tanpa muter-muter area kampus.</h1>
+    <p>Sensor ultrasonic memantau tiap slot secara langsung, dan QR Code membuka portal masuk-keluar otomatis. Booking dari HP, parkir tinggal jalan.</p>
+    <div class="mini-map" id="miniMap"></div>
+  </div>
+  <div class="auth-form-side">
+    <div class="auth-box">
+      <div class="auth-toggle">
+        <button id="tabLogin" class="active" onclick="switchTab('login')">Masuk</button>
+        <button id="tabRegister" onclick="switchTab('register')">Daftar</button>
+      </div>
+
+      <div id="loginPane">
+        <h2>Masuk ke akun kampus</h2>
+        <div class="desc">Gunakan email dan password akun kampus Anda.</div>
+        <div class="error-box" id="loginError"></div>
+        <form id="loginForm">
+          <div class="field"><label>Email</label><input type="email" name="email" placeholder="nama@kampus.ac.id" required></div>
+          <div class="field"><label>Password</label><input type="password" name="password" placeholder="••••••••" required></div>
+          <button class="btn btn-primary btn-block" type="submit">Masuk</button>
+        </form>
+        <p style="font-size:11.5px;color:var(--muted);margin-top:14px;">
+          Demo: <code class="k">budi@mhs.kampus.ac.id</code> / <code class="k">mhs123</code> (mahasiswa)<br>
+          <code class="k">admin@kampus.ac.id</code> / <code class="k">admin123</code> (petugas)
+        </p>
+      </div>
+
+      <div id="registerPane" style="display:none;">
+        <h2>Daftar akun baru</h2>
+        <div class="desc">Untuk mahasiswa dan petugas kampus.</div>
+        <div class="error-box" id="registerError"></div>
+        <form id="registerForm">
+          <div class="field"><label>Nama Lengkap</label><input name="nama" required></div>
+          <div class="field"><label>NIM / NIP</label><input name="nim_nip" required></div>
+          <div class="field"><label>Email Kampus</label><input type="email" name="email" required></div>
+          <div class="field"><label>Plat Nomor Kendaraan</label><input name="plat_nomor" placeholder="AG 1234 XYZ"></div>
+          <div class="field"><label>Peran</label>
+            <select name="role">
+              <option value="mahasiswa">Mahasiswa</option>
+              <option value="petugas">Petugas</option>
+            </select>
+          </div>
+          <div class="field"><label>Password</label><input type="password" name="password" required minlength="4"></div>
+          <button class="btn btn-primary btn-block" type="submit">Daftar & Masuk</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Mini animated slot map di panel kiri (hiasan)
+const mm = document.getElementById('miniMap');
+for (let i=0;i<10;i++){
+  const d = document.createElement('div');
+  d.className = 'mini-slot' + (Math.random()>0.55 ? ' on' : '');
+  mm.appendChild(d);
+}
+setInterval(()=>{
+  const cells = mm.querySelectorAll('.mini-slot');
+  const c = cells[Math.floor(Math.random()*cells.length)];
+  c.classList.toggle('on');
+}, 1200);
+
+function switchTab(tab){
+  document.getElementById('tabLogin').classList.toggle('active', tab==='login');
+  document.getElementById('tabRegister').classList.toggle('active', tab==='register');
+  document.getElementById('loginPane').style.display = tab==='login' ? 'block':'none';
+  document.getElementById('registerPane').style.display = tab==='register' ? 'block':'none';
+}
+
+async function handleSubmit(formId, url, errId){
+  const form = document.getElementById(formId);
+  form.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const errBox = document.getElementById(errId);
+    errBox.classList.remove('show');
+    const data = Object.fromEntries(new FormData(form).entries());
+    try{
+      const res = await fetch(url, {
+        method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include',
+        body: JSON.stringify(data)
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Terjadi kesalahan');
+      localStorage.setItem('sp_user', JSON.stringify(json.user));
+      window.location.href = json.user.role === 'petugas' ? '/admin.html' : '/dashboard.html';
+    }catch(err){
+      errBox.textContent = err.message;
+      errBox.classList.add('show');
+    }
+  });
+}
+handleSubmit('loginForm','/api/auth/login','loginError');
+handleSubmit('registerForm','/api/auth/register','registerError');
+</script>
+</body>
+</html>

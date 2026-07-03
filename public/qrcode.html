@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QR Akses — Smart Parking Kampus</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/common.js"></script>
+<script>
+async function loadPersonalQR() {
+  const res = await fetch('/api/access/qrcode/me', { credentials: 'include' });
+  const json = await res.json();
+  document.getElementById('personalQR').src = json.qrcode;
+  document.getElementById('personalPayload').textContent = json.payload;
+}
+
+async function loadBookingQRList() {
+  const res = await fetch('/api/booking/my', { credentials: 'include' });
+  const json = await res.json();
+  const aktif = json.bookings.filter(b => b.status === 'aktif');
+  const el = document.getElementById('bookingQrList');
+  if (!aktif.length) {
+    el.innerHTML = `<div class="empty-state" style="padding:20px;"><div class="glyph">∅</div>Tidak ada booking aktif</div>`;
+    return;
+  }
+  el.innerHTML = aktif.map(b => `
+    <div class="card" style="margin-bottom:12px;">
+      <h3>Slot ${b.kode_slot} <small>${b.zona_nama}</small></h3>
+      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+        <img id="bqr-${b.id}" style="width:120px;height:120px;border-radius:8px;border:5px solid var(--navy-950);">
+        <div style="font-size:12.5px;color:var(--muted);">
+          <div>Mulai: <b style="color:var(--ink)">${fmtDate(b.mulai)}</b></div>
+          <div>Selesai: <b style="color:var(--ink)">${fmtDate(b.selesai)}</b></div>
+          <div style="margin-top:6px;">Tunjukkan QR ini ke petugas gerbang saat masuk & keluar.</div>
+          <code class="k" id="bpayload-${b.id}" style="display:inline-block;margin-top:8px;word-break:break-all;"></code>
+        </div>
+      </div>
+    </div>`).join('');
+
+  aktif.forEach(async (b) => {
+    const r = await fetch(`/api/access/qrcode/booking/${b.id}`, { credentials: 'include' });
+    const j = await r.json();
+    document.getElementById(`bqr-${b.id}`).src = j.qrcode;
+    document.getElementById(`bpayload-${b.id}`).textContent = j.payload;
+  });
+}
+
+(async () => {
+  await ensureAuth('mahasiswa');
+  mountShell('QR Akses Saya', 'Gunakan QR Code ini untuk membuka portal masuk dan keluar area parkir secara otomatis.', `
+    <div class="grid grid-2">
+      <div class="card qr-card">
+        <h3 style="align-self:flex-start;">QR Akses Umum</h3>
+        <img id="personalQR" alt="QR akses">
+        <code class="k" id="personalPayload" style="margin-bottom:10px;word-break:break-all;"></code>
+        <p style="font-size:12px;color:var(--muted);">
+          Berlaku untuk masuk/keluar tanpa booking spesifik — sistem otomatis mencatat ke slot manapun yang Anda tempati.
+        </p>
+      </div>
+      <div>
+        <h3 style="margin-bottom:12px;">QR untuk Booking Aktif</h3>
+        <div id="bookingQrList"></div>
+      </div>
+    </div>
+  `);
+  await loadPersonalQR();
+  await loadBookingQRList();
+})();
+</script>
+</body>
+</html>

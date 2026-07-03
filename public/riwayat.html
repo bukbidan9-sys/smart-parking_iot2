@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Riwayat Parkir — Smart Parking Kampus</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/common.js"></script>
+<script>
+async function loadRiwayat() {
+  const res = await fetch('/api/access/riwayat/saya', { credentials: 'include' });
+  const json = await res.json();
+  const el = document.getElementById('riwayatTable');
+  if (!json.riwayat.length) {
+    el.innerHTML = `<div class="empty-state"><div class="glyph">∅</div>Belum ada riwayat parkir</div>`;
+    return;
+  }
+  el.innerHTML = `
+    <table>
+      <thead><tr><th>Slot</th><th>Plat Nomor</th><th>Masuk</th><th>Keluar</th><th>Durasi</th></tr></thead>
+      <tbody>
+        ${json.riwayat.map(r => `
+          <tr>
+            <td><b>${r.kode_slot || '-'}</b></td>
+            <td>${r.plat_nomor || '-'}</td>
+            <td>${fmtDate(r.waktu_masuk)}</td>
+            <td>${r.waktu_keluar ? fmtDate(r.waktu_keluar) : '<span class="badge" style="background:#FDF1DD;color:#B9760C;">sedang parkir</span>'}</td>
+            <td>${r.durasi_menit ? r.durasi_menit + ' menit' : '-'}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+(async () => {
+  await ensureAuth('mahasiswa');
+  mountShell('Riwayat Parkir', 'Catatan lengkap kendaraan masuk, keluar, dan durasi parkir Anda.', `
+    <div class="card"><div id="riwayatTable"></div></div>
+  `);
+  await loadRiwayat();
+})();
+</script>
+</body>
+</html>

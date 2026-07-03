@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monitoring Parkir — Smart Parking Kampus</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/common.js"></script>
+<script>
+let allSlots = [];
+
+async function loadSummary() {
+  const res = await fetch('/api/slots/summary', { credentials: 'include' });
+  const s = await res.json();
+  document.getElementById('sumTotal').textContent = s.total;
+  document.getElementById('sumKosong').textContent = s.kosong;
+  document.getElementById('sumTerisi').textContent = s.terisi;
+  document.getElementById('sumBooked').textContent = s.booked;
+}
+
+async function loadSlots() {
+  const res = await fetch('/api/slots', { credentials: 'include' });
+  const json = await res.json();
+  allSlots = json.slots;
+  renderMap();
+}
+
+function renderMap() {
+  const zones = {};
+  allSlots.forEach(s => {
+    if (!zones[s.zona_nama]) zones[s.zona_nama] = { lokasi: s.zona_lokasi, slots: [] };
+    zones[s.zona_nama].slots.push(s);
+  });
+  const html = Object.entries(zones).map(([nama, z]) => {
+    const kosong = z.slots.filter(s => s.status === 'kosong').length;
+    return `
+    <div class="zone-block">
+      <div class="zone-title"><span>${nama} · ${z.lokasi}</span><span>${kosong}/${z.slots.length} kosong</span></div>
+      <div class="slot-grid">
+        ${z.slots.map(s => `
+          <div class="slot-cell ${s.status}" id="slot-${s.id}" title="Device: ${s.device_id}">
+            <div class="dot"></div>
+            <div>${s.kode_slot}</div>
+            <div class="cm">${Math.round(s.jarak_cm)}cm</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('mapArea').innerHTML = html;
+}
+
+function updateOneSlot(slot) {
+  const idx = allSlots.findIndex(s => s.id === slot.id);
+  if (idx >= 0) allSlots[idx] = { ...allSlots[idx], ...slot };
+  const el = document.getElementById(`slot-${slot.id}`);
+  if (el) {
+    el.className = `slot-cell ${slot.status}`;
+    el.querySelector('.cm').textContent = `${Math.round(slot.jarak_cm)}cm`;
+  }
+  loadSummary();
+}
+
+(async () => {
+  await ensureAuth('mahasiswa');
+  mountShell('Monitoring & Peta Parkir', 'Data slot diperbarui langsung dari sensor ultrasonic ESP8266 tiap perangkat.', `
+    <div class="grid grid-4" style="margin-bottom:20px;">
+      <div class="card stat-card"><div class="num" id="sumTotal">–</div><div class="lbl">Total Slot</div><span class="tag tag-teal">Seluruh Kampus</span></div>
+      <div class="card stat-card"><div class="num" id="sumKosong">–</div><div class="lbl">Slot Kosong</div><span class="tag tag-green">Tersedia</span></div>
+      <div class="card stat-card"><div class="num" id="sumTerisi">–</div><div class="lbl">Slot Terisi</div><span class="tag tag-red">Sensor: &lt;15cm</span></div>
+      <div class="card stat-card"><div class="num" id="sumBooked">–</div><div class="lbl">Sedang Dibooking</div><span class="tag tag-amber">Reservasi Aktif</span></div>
+    </div>
+
+    <div class="card">
+      <h3>Peta Area Parkir Realtime <small>live · via WebSocket</small></h3>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>Kosong</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div>Terisi</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--amber)"></div>Dibooking</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#8791A6"></div>Maintenance</div>
+      </div>
+      <div id="mapArea"></div>
+    </div>
+  `);
+
+  await loadSummary();
+  await loadSlots();
+  initSocket(updateOneSlot);
+})();
+</script>
+</body>
+</html>

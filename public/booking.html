@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Booking Slot — Smart Parking Kampus</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/common.js"></script>
+<script>
+let availableSlots = [];
+
+async function loadAvailable() {
+  const res = await fetch('/api/slots', { credentials: 'include' });
+  const json = await res.json();
+  availableSlots = json.slots.filter(s => s.status === 'kosong');
+  const sel = document.getElementById('slotSelect');
+  sel.innerHTML = availableSlots.length
+    ? availableSlots.map(s => `<option value="${s.id}">${s.kode_slot} — ${s.zona_nama} (${s.zona_lokasi})</option>`).join('')
+    : `<option value="">Tidak ada slot kosong saat ini</option>`;
+}
+
+async function loadMyBookings() {
+  const res = await fetch('/api/booking/my', { credentials: 'include' });
+  const json = await res.json();
+  const el = document.getElementById('myBookings');
+  if (!json.bookings.length) {
+    el.innerHTML = `<div class="empty-state"><div class="glyph">∅</div>Belum ada booking</div>`;
+    return;
+  }
+  el.innerHTML = `
+    <table>
+      <thead><tr><th>Slot</th><th>Zona</th><th>Mulai</th><th>Selesai</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        ${json.bookings.map(b => `
+          <tr>
+            <td><b>${b.kode_slot}</b></td>
+            <td>${b.zona_nama}</td>
+            <td>${fmtDate(b.mulai)}</td>
+            <td>${fmtDate(b.selesai)}</td>
+            <td><span class="badge" style="background:${badgeBg(b.status)};color:${badgeColor(b.status)}">${b.status}</span></td>
+            <td>${b.status === 'aktif' ? `<button class="btn btn-outline btn-sm" onclick="batalkan(${b.id})">Batalkan</button>` : ''}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+function badgeBg(s){ return {aktif:'#E5F6EB',selesai:'#E3F3F3',dibatalkan:'#FCE9E9',expired:'#EDEFF3'}[s]||'#EDEFF3'; }
+function badgeColor(s){ return {aktif:'var(--green)',selesai:'var(--teal-dark)',dibatalkan:'var(--red)',expired:'#8791A6'}[s]||'#8791A6'; }
+
+async function batalkan(id) {
+  if (!confirm('Batalkan booking ini?')) return;
+  const res = await fetch(`/api/booking/${id}/batal`, { method: 'POST', credentials: 'include' });
+  if (res.ok) { showToast('Booking Dibatalkan', 'Slot kembali tersedia untuk pengguna lain.', 'info'); loadMyBookings(); loadAvailable(); }
+}
+
+(async () => {
+  await ensureAuth('mahasiswa');
+  const now = new Date();
+  const plus1h = new Date(now.getTime() + 60 * 60000);
+  const toLocal = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+
+  mountShell('Booking Slot Parkir', 'Pesan slot sebelum berangkat supaya sampai kampus langsung dapat tempat.', `
+    <div class="grid grid-2">
+      <div class="card">
+        <h3>Riwayat & Booking Aktif</h3>
+        <div id="myBookings"></div>
+      </div>
+      <div class="card">
+        <h3>Buat Booking Baru</h3>
+        <div class="error-box" id="bookError"></div>
+        <form id="bookForm">
+          <div class="field"><label>Pilih Slot Kosong</label><select id="slotSelect" required></select></div>
+          <div class="field"><label>Waktu Mulai</label><input type="datetime-local" name="mulai" id="mulaiInput" required></div>
+          <div class="field"><label>Waktu Selesai</label><input type="datetime-local" name="selesai" id="selesaiInput" required></div>
+          <button class="btn btn-primary btn-block" type="submit">Booking Slot</button>
+        </form>
+      </div>
+    </div>
+  `);
+  document.getElementById('mulaiInput').value = toLocal(now);
+  document.getElementById('selesaiInput').value = toLocal(plus1h);
+
+  await loadAvailable();
+  await loadMyBookings();
+  initSocket(() => loadAvailable());
+
+  document.getElementById('bookForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errBox = document.getElementById('bookError');
+    errBox.classList.remove('show');
+    const slot_id = document.getElementById('slotSelect').value;
+    const mulai = document.getElementById('mulaiInput').value.replace('T', ' ') + ':00';
+    const selesai = document.getElementById('selesaiInput').value.replace('T', ' ') + ':00';
+    if (!slot_id) { errBox.textContent = 'Tidak ada slot untuk dibooking'; errBox.classList.add('show'); return; }
+    try {
+      const res = await fetch('/api/booking', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ slot_id, mulai, selesai })
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+      showToast('Booking Berhasil', `Slot ${availableSlots.find(s=>s.id==slot_id)?.kode_slot} dipesan. Lihat QR di menu QR Akses Saya.`, 'info');
+      loadAvailable(); loadMyBookings();
+    } catch (err) {
+      errBox.textContent = err.message; errBox.classList.add('show');
+    }
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portal Otomatis — Smart Parking Kampus</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/common.js"></script>
+<script>
+window.onGateOpen = function(g) {
+  const bar = document.getElementById('gateBar');
+  const label = document.getElementById('gateLabel');
+  bar.classList.add('open');
+  label.textContent = `${g.gerbang.toUpperCase()} · ${g.user}${g.slot ? ' · slot ' + g.slot : ''}${g.durasi!==undefined ? ' · ' + g.durasi + ' menit' : ''}`;
+  setTimeout(() => bar.classList.remove('open'), 3000);
+};
+
+async function doScan(gerbang) {
+  const payload = document.getElementById('payloadInput').value.trim();
+  const resultBox = document.getElementById('scanResult');
+  if (!payload) { resultBox.innerHTML = `<div class="error-box show">Tempel data QR (payload) terlebih dahulu — hasil dari kamera scanner atau input manual demo.</div>`; return; }
+  try {
+    const res = await fetch('/api/access/scan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ payload, gerbang })
+    });
+    const json = await res.json();
+    resultBox.innerHTML = `<div style="padding:12px;border-radius:8px;background:${json.valid?'#E5F6EB':'#FCE9E9'};color:${json.valid?'var(--green)':'var(--red)'};font-size:13px;font-weight:600;">${json.pesan}</div>`;
+  } catch (e) {
+    resultBox.innerHTML = `<div class="error-box show">Gagal memproses scan</div>`;
+  }
+}
+
+async function loadRecentScans() {
+  const res = await fetch('/api/access/riwayat/semua', { credentials: 'include' });
+  const json = await res.json();
+  const el = document.getElementById('recentLog');
+  el.innerHTML = `
+    <table>
+      <thead><tr><th>Nama</th><th>NIM/NIP</th><th>Slot</th><th>Masuk</th><th>Keluar</th><th>Durasi</th></tr></thead>
+      <tbody>
+        ${json.riwayat.slice(0,15).map(r => `
+          <tr>
+            <td>${r.nama}</td><td>${r.nim_nip}</td><td>${r.kode_slot||'-'}</td>
+            <td>${fmtDate(r.waktu_masuk)}</td>
+            <td>${r.waktu_keluar ? fmtDate(r.waktu_keluar) : '<span class="badge" style="background:#FDF1DD;color:#B9760C;">di dalam</span>'}</td>
+            <td>${r.durasi_menit ? r.durasi_menit+' mnt' : '-'}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+(async () => {
+  await ensureAuth('petugas');
+  mountShell('Portal Otomatis — Scan QR', 'Simulasi gerbang: tempel payload QR hasil scan untuk membuka portal masuk/keluar.', `
+    <div class="grid grid-2">
+      <div class="card">
+        <h3>Pindai QR Code</h3>
+        <div class="field">
+          <label>Payload QR (dari kamera scanner / tempel manual untuk demo)</label>
+          <input id="payloadInput" placeholder='{"t":"access","uid":2}'>
+        </div>
+        <div style="display:flex;gap:10px;margin-bottom:14px;">
+          <button class="btn btn-primary" onclick="doScan('masuk')">Buka Gerbang Masuk</button>
+          <button class="btn btn-outline" onclick="doScan('keluar')">Buka Gerbang Keluar</button>
+        </div>
+        <div id="scanResult"></div>
+
+        <div class="gate-anim" style="margin-top:20px;">
+          <div class="gate-bar" id="gateBar"></div>
+          <div class="gate-label" id="gateLabel">Menunggu QR valid…</div>
+        </div>
+        <p style="font-size:11.5px;color:var(--muted);margin-top:12px;">
+          Tip demo: buka halaman <b>QR Akses Saya</b> di akun mahasiswa pada tab lain, lalu salin nilai <code class="k">payload</code> yang tersedia di bawah gambar QR (atau screenshot QR dan scan dengan kamera HP yang mengarah ke server ini).
+        </p>
+      </div>
+      <div class="card">
+        <h3>Aktivitas Terbaru</h3>
+        <div id="recentLog"></div>
+      </div>
+    </div>
+  `);
+  await loadRecentScans();
+  initSocket();
+})();
+</script>
+</body>
+</html>

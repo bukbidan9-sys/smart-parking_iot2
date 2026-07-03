@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kelola Pengguna — Smart Parking Kampus</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/common.js"></script>
+<script>
+async function loadUsers() {
+  const res = await fetch('/api/admin/users', { credentials: 'include' });
+  const json = await res.json();
+  document.getElementById('usersTable').innerHTML = `
+    <table>
+      <thead><tr><th>Nama</th><th>NIM/NIP</th><th>Email</th><th>Plat</th><th>Peran</th><th>Terdaftar</th><th></th></tr></thead>
+      <tbody>
+        ${json.users.map(u => `
+          <tr>
+            <td><b>${u.nama}</b></td>
+            <td>${u.nim_nip}</td>
+            <td>${u.email}</td>
+            <td>${u.plat_nomor || '-'}</td>
+            <td>
+              <select onchange="ubahRole(${u.id}, this.value)" style="font-size:12px;padding:4px 6px;border-radius:6px;border:1px solid #D8DEE9;">
+                <option value="mahasiswa" ${u.role==='mahasiswa'?'selected':''}>Mahasiswa</option>
+                <option value="petugas" ${u.role==='petugas'?'selected':''}>Petugas</option>
+              </select>
+            </td>
+            <td style="font-family:var(--mono);font-size:11px;color:var(--muted);">${fmtDate(u.created_at)}</td>
+            <td><button class="btn btn-outline btn-sm" onclick="hapusUser(${u.id},'${u.nama.replace(/'/g,"")}')">Hapus</button></td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+async function ubahRole(id, role) {
+  await fetch(`/api/admin/users/${id}/role`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+    body: JSON.stringify({ role })
+  });
+  showToast('Peran Diperbarui', 'Peran pengguna berhasil diubah.', 'info');
+}
+
+async function hapusUser(id, nama) {
+  if (!confirm(`Hapus pengguna "${nama}"? Tindakan ini tidak bisa dibatalkan.`)) return;
+  await fetch(`/api/admin/users/${id}`, { method: 'DELETE', credentials: 'include' });
+  showToast('Pengguna Dihapus', `${nama} telah dihapus dari sistem.`, 'warning');
+  loadUsers();
+}
+
+(async () => {
+  await ensureAuth('petugas');
+  mountShell('Kelola Pengguna', 'Daftar mahasiswa dan petugas yang terdaftar di sistem.', `
+    <div class="card"><div id="usersTable"></div></div>
+  `);
+  await loadUsers();
+})();
+</script>
+</body>
+</html>
