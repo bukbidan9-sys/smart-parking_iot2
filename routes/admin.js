@@ -1,79 +1,120 @@
 const express = require('express');
-const db = require('../db');
+const db = require('../db'); // Menggunakan pool mysql2 yang baru
 const { authRequired, petugasOnly } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(authRequired, petugasOnly);
 
 // DAFTAR PENGGUNA
-router.get('/users', (req, res) => {
-  const rows = db.prepare('SELECT id, nama, nim_nip, email, role, plat_nomor, created_at FROM users ORDER BY id DESC').all();
-  res.json({ users: rows });
+router.get('/users', async (req, res) => {
+  try {
+    const [rows] = await db.promise().query('SELECT id, nama, nim_nip, email, role, plat_nomor, created_at FROM users ORDER BY id DESC');
+    res.json({ users: rows });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-router.delete('/users/:id', (req, res) => {
-  db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
-  res.json({ ok: true });
+router.delete('/users/:id', async (req, res) => {
+  try {
+    await db.promise().query('DELETE FROM users WHERE id = ?', [req.params.id]);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-router.patch('/users/:id/role', (req, res) => {
+router.patch('/users/:id/role', async (req, res) => {
   const { role } = req.body;
   if (!['mahasiswa', 'petugas'].includes(role)) return res.status(400).json({ error: 'Role tidak valid' });
-  db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, req.params.id);
-  res.json({ ok: true });
+  
+  try {
+    await db.promise().query('UPDATE users SET role = ? WHERE id = ?', [role, req.params.id]);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // STATISTIK RINGKAS DASHBOARD
-router.get('/dashboard', (req, res) => {
-  const totalSlot = db.prepare('SELECT COUNT(*) c FROM slots').get().c;
-  const kosong = db.prepare("SELECT COUNT(*) c FROM slots WHERE status='kosong'").get().c;
-  const terisi = db.prepare("SELECT COUNT(*) c FROM slots WHERE status='terisi'").get().c;
-  const booked = db.prepare("SELECT COUNT(*) c FROM slots WHERE status='booked'").get().c;
-  const totalUser = db.prepare('SELECT COUNT(*) c FROM users').get().c;
-  const kunjunganHariIni = db.prepare(`
-    SELECT COUNT(*) c FROM access_logs WHERE date(waktu_masuk) = date('now') AND gerbang='masuk'
-  `).get().c;
-  const sedangParkir = db.prepare(`SELECT COUNT(*) c FROM access_logs WHERE waktu_keluar IS NULL`).get().c;
+router.get('/dashboard', async (req, res) => {
+  try {
+    const [totalSlotRes] = await db.promise().query('SELECT COUNT(*) c FROM slots');
+    const [kosongRes] = await db.promise().query("SELECT COUNT(*) c FROM slots WHERE status='kosong'");
+    const [terisiRes] = await db.promise().query("SELECT COUNT(*) c FROM slots WHERE status='terisi'");
+    const [bookedRes] = await db.promise().query("SELECT COUNT(*) c FROM slots WHERE status='booked'");
+    const [totalUserRes] = await db.promise().query('SELECT COUNT(*) c FROM users');
+    
+    // Menggunakan CURDATE() untuk mencocokkan tanggal hari ini di MySQL
+    const [kunjunganRes] = await db.promise().query(`
+      SELECT COUNT(*) c FROM access_logs WHERE DATE(waktu_masuk) = CURDATE() AND gerbang='masuk'
+    `);
+    const [sedangParkirRes] = await db.promise().query(`SELECT COUNT(*) c FROM access_logs WHERE waktu_keluar IS NULL`);
 
-  res.json({ totalSlot, kosong, terisi, booked, totalUser, kunjunganHariIni, sedangParkir });
+    res.json({ 
+      totalSlot: totalSlotRes[0].c, 
+      kosong: kosongRes[0].c, 
+      terisi: terisiRes[0].c, 
+      booked: bookedRes[0].c, 
+      totalUser: totalUserRes[0].c, 
+      kunjunganHariIni: kunjunganRes[0].c, 
+      sedangParkir: sedangParkirRes[0].c 
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // LAPORAN HARIAN (7 hari terakhir)
-router.get('/laporan/harian', (req, res) => {
-  const rows = db.prepare(`
-    SELECT date(waktu_masuk) as tanggal, COUNT(*) as jumlah_kendaraan,
-           ROUND(AVG(durasi_menit)) as rata_durasi_menit
-    FROM access_logs
-    WHERE waktu_masuk >= date('now', '-6 days') AND gerbang='masuk'
-    GROUP BY date(waktu_masuk)
-    ORDER BY tanggal ASC
-  `).all();
-  res.json({ laporan: rows });
+router.get('/laporan/harian', async (req, res) => {
+  try {
+    // Menggunakan DATE_SUB(CURDATE(), INTERVAL 6 DAY) untuk MySQL
+    const [rows] = await db.promise().query(`
+      SELECT DATE(waktu_masuk) as tanggal, COUNT(*) as jumlah_kendaraan,
+             ROUND(AVG(durasi_menit)) as rata_durasi_menit
+      FROM access_logs
+      WHERE waktu_masuk >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) AND gerbang='masuk'
+      GROUP BY DATE(waktu_masuk)
+      ORDER BY tanggal ASC
+    `);
+    res.json({ laporan: rows });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // LAPORAN BULANAN (12 bulan terakhir)
-router.get('/laporan/bulanan', (req, res) => {
-  const rows = db.prepare(`
-    SELECT strftime('%Y-%m', waktu_masuk) as bulan, COUNT(*) as jumlah_kendaraan
-    FROM access_logs
-    WHERE waktu_masuk >= date('now', '-12 months') AND gerbang='masuk'
-    GROUP BY bulan
-    ORDER BY bulan ASC
-  `).all();
-  res.json({ laporan: rows });
+router.get('/laporan/bulanan', async (req, res) => {
+  try {
+    // Menggunakan DATE_FORMAT dan DATE_SUB INTERVAL 12 MONTH untuk MySQL
+    const [rows] = await db.promise().query(`
+      SELECT DATE_FORMAT(waktu_masuk, '%Y-%m') as bulan, COUNT(*) as jumlah_kendaraan
+      FROM access_logs
+      WHERE waktu_masuk >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH) AND gerbang='masuk'
+      GROUP BY bulan
+      ORDER BY bulan ASC
+    `);
+    res.json({ laporan: rows });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // STATISTIK PER ZONA (okupansi)
-router.get('/laporan/zona', (req, res) => {
-  const rows = db.prepare(`
-    SELECT z.nama as zona, COUNT(s.id) as total_slot,
-      SUM(CASE WHEN s.status='terisi' THEN 1 ELSE 0 END) as terisi,
-      SUM(CASE WHEN s.status='kosong' THEN 1 ELSE 0 END) as kosong,
-      SUM(CASE WHEN s.status='booked' THEN 1 ELSE 0 END) as booked
-    FROM zones z LEFT JOIN slots s ON s.zone_id = z.id
-    GROUP BY z.id
-  `).all();
-  res.json({ zona: rows });
+router.get('/laporan/zona', async (req, res) => {
+  try {
+    const [rows] = await db.promise().query(`
+      SELECT z.nama as zona, COUNT(s.id) as total_slot,
+        SUM(CASE WHEN s.status='terisi' THEN 1 ELSE 0 END) as terisi,
+        SUM(CASE WHEN s.status='kosong' THEN 1 ELSE 0 END) as kosong,
+        SUM(CASE WHEN s.status='booked' THEN 1 ELSE 0 END) as booked
+      FROM zones z LEFT JOIN slots s ON s.zone_id = z.id
+      GROUP BY z.id
+    `);
+    res.json({ zona: rows });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 module.exports = router;
